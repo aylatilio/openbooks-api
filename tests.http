@@ -1,0 +1,46 @@
+@host = http://127.0.0.1:8000
+@json = application/json
+
+### Health
+GET {{host}}/api/v1/health
+Accept: {{json}}
+
+### List books (default pagination)
+GET {{host}}/api/v1/books
+Accept: {{json}}
+
+### List books (limit & offset)
+GET {{host}}/api/v1/books?limit=5&offset=10
+Accept: {{json}}
+
+### Get book by ID (valid)
+GET {{host}}/api/v1/books/1
+Accept: {{json}}
+
+### Get book by ID (not found)
+GET {{host}}/api/v1/books/99999
+Accept: {{json}}
+
+### Search by title (case-insensitive substring)
+GET {{host}}/api/v1/books/search?title=moon&limit=5
+Accept: {{json}}
+
+### Search by category
+GET {{host}}/api/v1/books/search?category=Travel&limit=5
+Accept: {{json}}
+
+### Search by title + category
+GET {{host}}/api/v1/books/search?title=the&category=Mystery&limit=5
+Accept: {{json}}
+
+### Categories
+GET {{host}}/api/v1/categories
+Accept: {{json}}
+
+### Stats - Overview
+GET {{host}}/api/v1/stats/overview
+Accept: {{json}}
+
+### Stats - Categories
+GET {{host}}/api/v1/stats/categories
+Accept: {{json}}
