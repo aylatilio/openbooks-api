@@ -125,37 +125,37 @@ class CSVBookRepository:
         df["price"] = pd.to_numeric(df["price"], errors="coerce")
         return df
 
-def stats_overview(self) -> dict:
-    """
-    High-level dataset metrics aligned to the API schema.
-    Returns only:
-      - total_books (int)
-      - avg_price (float)
-      - ratings_distribution (dict[str,int]) with keys "1".."5"
-    """
-    df = self._df()
-    df = self._numeric_price(df)
+    def stats_overview(self) -> dict:
+        """
+        High-level dataset metrics aligned to the API schema.
+        Returns only:
+          - total_books (int)
+          - avg_price (float)
+          - ratings_distribution (dict[str,int]) with keys "1".."5"
+        """
+        df = self._df()
+        df = self._numeric_price(df)
 
-    total = int(len(df))
-    if total == 0:
+        total = int(len(df))
+        if total == 0:
+            return {
+                "total_books": 0,
+                "avg_price": 0.0,
+                "ratings_distribution": {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0},
+            }
+
+        avg_price = float(df["price"].mean(skipna=True)) if "price" in df else 0.0
+
+        vc = df["rating"].value_counts(dropna=True).to_dict()  # ex.: {5: 123, 4: 98, ...}
+        dist = {str(int(k)): int(v) for k, v in vc.items()}
+        for k in ("1", "2", "3", "4", "5"):
+            dist.setdefault(k, 0)
+
         return {
-            "total_books": 0,
-            "avg_price": 0.0,
-            "ratings_distribution": {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0},
+            "total_books": total,
+            "avg_price": round(avg_price, 2),
+            "ratings_distribution": dist,
         }
-
-    avg_price = float(df["price"].mean(skipna=True)) if "price" in df else 0.0
-
-    vc = df["rating"].value_counts(dropna=True).to_dict()  # ex.: {5: 123, 4: 98, ...}
-    dist = {str(int(k)): int(v) for k, v in vc.items()}
-    for k in ("1", "2", "3", "4", "5"):
-        dist.setdefault(k, 0)
-
-    return {
-        "total_books": total,
-        "avg_price": round(avg_price, 2),
-        "ratings_distribution": dist,
-    }
 
     def stats_by_category(self) -> List[dict]:
         """
@@ -183,3 +183,4 @@ def stats_overview(self) -> dict:
                 "max_price": round(float(row["max"]), 2),
             })
         return out
+
