@@ -26,7 +26,7 @@ app = FastAPI(
     description="Public API to query books scraped from books.toscrape.com",
     license_info={
         "name": "MIT License",
-        "url": "https://github.com/aylaatilio/openbooks-api/blob/main/LICENSE",
+        "url": "https://github.com/aylatilio/openbooks-api/blob/main/LICENSE",
     },
     contact={
         "name": "Ayla Atilio Florscuk",
