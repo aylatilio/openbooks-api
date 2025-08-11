@@ -1,6 +1,21 @@
-.venv/
-__pycache__/
-*.pyc
-.DS_Store
-.env
-.pytest_cache/
+# IDE/Editor
+.vscode/
+.idea/
+
+# Python caches & tooling
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+coverage.xml
+htmlcov/
+.pytype/
+__pypackages__/
+
+# Build/dist
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log

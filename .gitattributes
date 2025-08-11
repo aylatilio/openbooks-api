@@ -5,3 +5,8 @@
 *.http text eol=lf
 *.yml  text eol=lf
 *.yaml text eol=lf
+*.png binary
+*.jpg binary
+*.ipynb binary
+*.sh  text eol=lf
+*.bat text eol=crlf
