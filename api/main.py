@@ -30,7 +30,7 @@ app = FastAPI(
     },
     contact={
         "name": "Ayla Atilio Florscuk",
-        "url": "https://github.com/aylaatilio",
+        "url": "https://github.com/aylatilio",
     },
     openapi_tags=TAGS_METADATA,
 )
