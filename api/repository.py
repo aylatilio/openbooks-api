@@ -1,8 +1,6 @@
 # Repository: CSV-backed data-access layer for books
 # Responsibilities: load/cache dataset and provide query/insight methods
 
-# Data-access layer for the books dataset backed by a CSV file
-
 from pathlib import Path
 from typing import List, Optional
 import pandas as pd
@@ -146,7 +144,7 @@ class CSVBookRepository:
 
         avg_price = float(df["price"].mean(skipna=True)) if "price" in df else 0.0
 
-        vc = df["rating"].value_counts(dropna=True).to_dict()  # ex.: {5: 123, 4: 98, ...}
+        vc = df["rating"].value_counts(dropna=True).to_dict()  # e.g., {5: 123, 4: 98, ...}
         dist = {str(int(k)): int(v) for k, v in vc.items()}
         for k in ("1", "2", "3", "4", "5"):
             dist.setdefault(k, 0)
@@ -184,3 +182,23 @@ class CSVBookRepository:
             })
         return out
 
+    def top_rated(self, limit: int) -> List[dict]:
+        """
+        Return the top-N books by rating (desc). Tie-breaker by id asc for stability.
+        """
+        df = self._df().copy()
+        df["rating"] = pd.to_numeric(df["rating"], errors="coerce")
+        df = df.sort_values(["rating", "id"], ascending=[False, True], na_position="last")
+        df = df.head(limit)
+        return [row.to_dict() for _, row in df.iterrows()]
+
+    def price_range(self, min_price: float, max_price: float, limit: int, offset: int) -> List[dict]:
+        """
+        Return books whose price is within [min_price, max_price] inclusive.
+        Sorted by price asc, then id asc, with pagination.
+        """
+        df = self._numeric_price(self._df())
+        df = df[df["price"].between(min_price, max_price, inclusive="both")]
+        df = df.sort_values(["price", "id"], ascending=[True, True])
+        df = df.iloc[offset : offset + limit]
+        return [row.to_dict() for _, row in df.iterrows()]

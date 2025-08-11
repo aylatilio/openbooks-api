@@ -154,3 +154,34 @@ client.test("root redirect", () => {
   client.assert(String(loc).endsWith("/docs"), "should redirect to /docs");
 });
 %}
+
+### Top rated (limit 5)
+GET {{host}}/api/v1/books/top-rated?limit=5
+Accept: {{json}}
+
+> {%
+client.test("top-rated: 200 OK", () => client.assert(response.status === 200));
+const arr = JSON.parse(response.body);
+client.test("top-rated: array", () => client.assert(Array.isArray(arr)));
+if (arr.length > 1) {
+  client.test("top-rated: sorted desc by rating", () =>
+    client.assert(arr[0].rating >= arr[arr.length - 1].rating)
+  );
+}
+%}
+
+### Price range
+GET {{host}}/api/v1/books/price-range?min=20&max=30&limit=5
+Accept: {{json}}
+
+> {%
+client.test("price-range: 200 OK", () => client.assert(response.status === 200));
+const arr = JSON.parse(response.body);
+client.test("price-range: array", () => client.assert(Array.isArray(arr)));
+if (arr.length > 0) {
+  client.test("price-range: all within [20,30]", () =>
+    client.assert(arr.every(b => b.price >= 20 && b.price <= 30))
+  );
+}
+%}
+

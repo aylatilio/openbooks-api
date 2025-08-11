@@ -163,6 +163,40 @@ def list_books(
     rows = repo.list(limit=limit, offset=offset)
     return [Book(**row) for row in rows]
 
+
+@app.get(
+    "/api/v1/books/top-rated",
+    response_model=List[Book],
+    tags=["books"],
+    summary="Top rated books",
+)
+def top_rated(
+    limit: int = Query(10, ge=1, le=100, description="How many items to return."),
+    repo: CSVBookRepository = Depends(get_repo),
+):
+    """Return the top-N books by rating (desc)."""
+    rows = repo.top_rated(limit=limit)
+    return [Book(**row) for row in rows]
+
+
+@app.get(
+    "/api/v1/books/price-range",
+    response_model=List[Book],
+    tags=["books"],
+    summary="Books in a price range",
+)
+def price_range(
+    min: float = Query(..., ge=0, description="Minimum price (inclusive)."),
+    max: float = Query(..., ge=0, description="Maximum price (inclusive)."),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    repo: CSVBookRepository = Depends(get_repo),
+):
+    """Return books whose price is between [min, max], inclusive, sorted by price asc."""
+    rows = repo.price_range(min_price=min, max_price=max, limit=limit, offset=offset)
+    return [Book(**row) for row in rows]
+
+
 @app.get(
     "/api/v1/books/search",
     response_model=List[Book],
@@ -180,6 +214,7 @@ def search_books(
     rows = repo.search(title=title, category=category, limit=limit, offset=offset)
     return [Book(**row) for row in rows]
 
+
 @app.get(
     "/api/v1/books/{book_id}",
     response_model=Book,
@@ -193,6 +228,7 @@ def get_book(book_id: int, repo: CSVBookRepository = Depends(get_repo)):
     if not row:
         raise HTTPException(status_code=404, detail="Book not found")
     return Book(**row)
+
 
 @app.get(
     "/api/v1/categories",
