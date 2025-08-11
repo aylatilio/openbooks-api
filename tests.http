@@ -1,47 +1,156 @@
+# Default host (prod). Comment out this line and uncomment the local one to test locally
 @host = https://openbooks-api.onrender.com
-@json = application/json
+# @host = http://127.0.0.1:8000
 
+@json = application/json
 
 ### Health
 GET {{host}}/api/v1/health
 Accept: {{json}}
 
+> {%
+client.test("health: 200 OK", () => client.assert(response.status === 200));
+const h = JSON.parse(response.body);
+client.test("health: status=ok", () => client.assert(h.status === "ok"));
+client.test("health: rows >= 0", () => client.assert(typeof h.rows === "number" && h.rows >= 0));
+%}
+
 ### List books (default pagination)
 GET {{host}}/api/v1/books
 Accept: {{json}}
+
+> {%
+client.test("list: 200 OK", () => client.assert(response.status === 200));
+const arr = JSON.parse(response.body);
+client.test("list: array", () => client.assert(Array.isArray(arr)));
+if (arr.length > 0) {
+  const b = arr[0];
+  client.test("list: book basics", () => {
+    client.assert(typeof b.id === "number", "id");
+    client.assert(typeof b.title === "string", "title");
+    client.assert(typeof b.price === "number", "price");
+  });
+}
+%}
 
 ### List books (limit & offset)
 GET {{host}}/api/v1/books?limit=5&offset=10
 Accept: {{json}}
 
+> {%
+client.test("list paginated: 200 OK", () => client.assert(response.status === 200));
+const arr = JSON.parse(response.body);
+client.test("list paginated: <= 5", () => client.assert(Array.isArray(arr) && arr.length <= 5));
+%}
+
 ### Get book by ID (valid)
 GET {{host}}/api/v1/books/1
 Accept: {{json}}
 
+> {%
+client.test("get by id: 200 OK", () => client.assert(response.status === 200));
+const b = JSON.parse(response.body);
+client.test("get by id: has fields", () => {
+  client.assert(b.id === 1, "id should be 1");
+  client.assert(typeof b.title === "string", "title");
+});
+%}
+
 ### Get book by ID (not found)
-GET {{host}}/api/v1/books/99999
+GET {{host}}/api/v1/books/9999
 Accept: {{json}}
+
+> {%
+client.test("get by id 9999: 404", () => client.assert(response.status === 404));
+%}
 
 ### Search by title (case-insensitive substring)
 GET {{host}}/api/v1/books/search?title=moon&limit=5
 Accept: {{json}}
 
+> {%
+client.test("search title: 200 OK", () => client.assert(response.status === 200));
+const arr = JSON.parse(response.body);
+client.test("search title: <= 5", () => client.assert(arr.length <= 5));
+%}
+
 ### Search by category
 GET {{host}}/api/v1/books/search?category=Travel&limit=5
 Accept: {{json}}
+
+> {%
+client.test("search category: 200 OK", () => client.assert(response.status === 200));
+const arr = JSON.parse(response.body);
+client.test("search category: <= 5", () => client.assert(arr.length <= 5));
+if (arr.length > 0) {
+  client.test("search category: category contains 'Travel'", () => {
+    client.assert(String(arr[0].category).toLowerCase().includes("travel"));
+  });
+}
+%}
 
 ### Search by title + category
 GET {{host}}/api/v1/books/search?title=the&category=Mystery&limit=5
 Accept: {{json}}
 
+> {%
+client.test("search title+category: 200 OK", () => client.assert(response.status === 200));
+const arr = JSON.parse(response.body);
+client.test("search title+category: <= 5", () => client.assert(arr.length <= 5));
+%}
+
 ### Categories
 GET {{host}}/api/v1/categories
 Accept: {{json}}
 
-### Stats - Overview
+> {%
+client.test("categories: 200 OK", () => client.assert(response.status === 200));
+const cats = JSON.parse(response.body);
+client.test("categories: array", () => client.assert(Array.isArray(cats)));
+client.test("categories: likely contains 'Travel'", () => client.assert(cats.includes("Travel")));
+%}
+
+### Stats - overview
 GET {{host}}/api/v1/stats/overview
 Accept: {{json}}
 
-### Stats - Categories
+> {%
+client.test("stats overview: 200 OK", () => client.assert(response.status === 200));
+const s = JSON.parse(response.body);
+client.test("stats overview: fields", () => {
+  client.assert(typeof s.total_books === "number", "total_books");
+  client.assert(typeof s.avg_price === "number", "avg_price");
+  client.assert(!!s.ratings_distribution, "ratings_distribution");
+  ["1","2","3","4","5"].forEach(k => client.assert(k in s.ratings_distribution));
+});
+%}
+
+### Stats - by category
 GET {{host}}/api/v1/stats/categories
 Accept: {{json}}
+
+> {%
+client.test("stats by category: 200 OK", () => client.assert(response.status === 200));
+const arr = JSON.parse(response.body);
+client.test("stats by category: array", () => client.assert(Array.isArray(arr)));
+if (arr.length > 0) {
+  const c = arr[0];
+  client.test("stats by category: fields", () => {
+    client.assert(typeof c.category === "string", "category");
+    client.assert(typeof c.count === "number", "count");
+    client.assert(typeof c.avg_price === "number", "avg_price");
+  });
+}
+%}
+
+### Root (redirects to /docs; 307/308 esperado)
+GET {{host}}/
+Accept: text/html
+
+> {%
+client.test("root redirect", () => {
+  client.assert(response.status === 307 || response.status === 308, "expected 307/308");
+  const loc = response.headers["location"] || response.headers["Location"];
+  client.assert(String(loc).endsWith("/docs"), "should redirect to /docs");
+});
+%}
