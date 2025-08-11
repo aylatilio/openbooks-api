@@ -1,5 +1,6 @@
-@host = http://127.0.0.1:8000
+@host = https://openbooks-api.onrender.com
 @json = application/json
+
 
 ### Health
 GET {{host}}/api/v1/health
