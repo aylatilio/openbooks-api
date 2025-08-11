@@ -128,7 +128,7 @@ class CSVBookRepository:
 def stats_overview(self) -> dict:
     """
     High-level dataset metrics aligned to the API schema.
-    Returns only the fields defined in StatsOverviewResponse:
+    Returns only:
       - total_books (int)
       - avg_price (float)
       - ratings_distribution (dict[str,int]) with keys "1".."5"
@@ -146,18 +146,15 @@ def stats_overview(self) -> dict:
 
     avg_price = float(df["price"].mean(skipna=True)) if "price" in df else 0.0
 
-    # value_counts -> ensure native types and string keys
-    vc = df["rating"].value_counts(dropna=True).to_dict()  # e.g., {5: 123, 4: 98, ...}
+    vc = df["rating"].value_counts(dropna=True).to_dict()  # ex.: {5: 123, 4: 98, ...}
     dist = {str(int(k)): int(v) for k, v in vc.items()}
-
-    # guarantee all keys "1".."5" exist
     for k in ("1", "2", "3", "4", "5"):
         dist.setdefault(k, 0)
 
     return {
         "total_books": total,
         "avg_price": round(avg_price, 2),
-        "ratings_distribution": dist,  # <- PLURAL, como no schema
+        "ratings_distribution": dist,
     }
 
     def stats_by_category(self) -> List[dict]:
