@@ -1,6 +1,6 @@
 # OpenBooks API
 # Purpose: Public REST API over the scraped books dataset
-# Layers: Endpoints delegate data access to the Repository (api/repository.py)
+# Layers: Endpoints delegate data access to api/repository.py
 # Swagger/OpenAPI: interactive docs at /docs
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
@@ -15,8 +15,7 @@ from .repository import CSVBookRepository
 # -----------------------------------------------------------------------------
 TAGS_METADATA = [
     {"name": "health", "description": "Service health and dataset availability."},
-    {"name": "books", "description": "List and retrieve books."},
-    {"name": "search", "description": "Query books by title and/or category."},
+    {"name": "books", "description": "List, retrieve and search books."},
     {"name": "categories", "description": "Available book categories."},
     {"name": "stats", "description": "Collection insights and per-category statistics."},
 ]
@@ -25,17 +24,16 @@ app = FastAPI(
     title="OpenBooks API",
     version="1.0.0",
     description="Public API to query books scraped from books.toscrape.com",
+    license_info={
+        "name": "MIT License",
+        "url": "https://github.com/aylaatilio/openbooks-api/blob/main/LICENSE",
+    },
+    contact={
+        "name": "Ayla Atilio Florscuk",
+        "url": "https://github.com/aylaatilio",
+    },
     openapi_tags=TAGS_METADATA,
-    license_info={"name": "MIT License", "url": "https://opensource.org/licenses/MIT"},
-    # opcional: preencha se quiser
-    # contact={"name": "Ayla Atilio Florscuk", "url": "https://github.com/aylatilio"},
 )
-
-# Redirect root to the interactive docs
-@app.get("/", include_in_schema=False)
-def root():
-    return RedirectResponse(url="/docs")
-
 
 # -----------------------------------------------------------------------------
 # Models (shown in OpenAPI schemas) + examples
@@ -142,6 +140,7 @@ def get_repo() -> CSVBookRepository:
     tags=["health"],
     summary="Health probe",
     response_description="Current service status and dataset metadata.",
+    response_model_exclude_none=True,
 )
 def health(repo: CSVBookRepository = Depends(get_repo)):
     """Returns whether the dataset is present and basic metadata about it."""
@@ -179,11 +178,10 @@ def get_book(book_id: int, repo: CSVBookRepository = Depends(get_repo)):
         raise HTTPException(status_code=404, detail="Book not found")
     return Book(**row)
 
-
 @app.get(
     "/api/v1/books/search",
     response_model=List[Book],
-    tags=["search"],
+    tags=["books"],
     summary="Search by title/category",
 )
 def search_books(
@@ -214,6 +212,7 @@ def list_categories(repo: CSVBookRepository = Depends(get_repo)):
     response_model=StatsOverviewResponse,
     tags=["stats"],
     summary="Global stats",
+    response_model_exclude_none=True,
 )
 def stats_overview(repo: CSVBookRepository = Depends(get_repo)):
     """Collection-level metrics (count, price average, rating distribution)."""
@@ -229,3 +228,8 @@ def stats_overview(repo: CSVBookRepository = Depends(get_repo)):
 def stats_categories(repo: CSVBookRepository = Depends(get_repo)):
     """Per-category metrics (count and price stats), sorted by count desc."""
     return repo.stats_by_category()
+
+# Redirect root to the interactive docs
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/docs")
