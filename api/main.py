@@ -163,21 +163,6 @@ def list_books(
     rows = repo.list(limit=limit, offset=offset)
     return [Book(**row) for row in rows]
 
-
-@app.get(
-    "/api/v1/books/{book_id}",
-    response_model=Book,
-    tags=["books"],
-    summary="Get a single book by ID",
-    responses={404: {"description": "Book not found"}},
-)
-def get_book(book_id: int, repo: CSVBookRepository = Depends(get_repo)):
-    """Retrieve a single book by ID (1-based)."""
-    row = repo.get(book_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Book not found")
-    return Book(**row)
-
 @app.get(
     "/api/v1/books/search",
     response_model=List[Book],
@@ -195,6 +180,19 @@ def search_books(
     rows = repo.search(title=title, category=category, limit=limit, offset=offset)
     return [Book(**row) for row in rows]
 
+@app.get(
+    "/api/v1/books/{book_id}",
+    response_model=Book,
+    tags=["books"],
+    summary="Get a single book by ID",
+    responses={404: {"description": "Book not found"}},
+)
+def get_book(book_id: int, repo: CSVBookRepository = Depends(get_repo)):
+    """Retrieve a single book by ID (1-based)."""
+    row = repo.get(book_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Book not found")
+    return Book(**row)
 
 @app.get(
     "/api/v1/categories",
