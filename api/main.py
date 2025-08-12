@@ -13,7 +13,6 @@ import uuid
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
-from pydantic import ConfigDict
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from .repository import CSVBookRepository
