@@ -2,15 +2,20 @@
 # Purpose: Public REST API over the scraped books dataset
 # Layers: Endpoints delegate data access to api/repository.py
 # Swagger/OpenAPI: interactive docs at /docs
+
+# stdlib
+import os
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
+
+# third-party
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
+
+# local
 from .repository import CSVBookRepository
-from pathlib import Path
-import os
-from dotenv import load_dotenv
 
 load_dotenv()
 
