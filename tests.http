@@ -143,7 +143,7 @@ if (arr.length > 0) {
 }
 %}
 
-### Root (redirects to /docs; 307/308 esperado)
+### Root (redirects to /docs; 307/308)
 GET {{host}}/
 Accept: text/html
 
@@ -171,7 +171,7 @@ if (arr.length > 1) {
 %}
 
 ### Price range
-GET {{host}}/api/v1/books/price-range?min=20&max=30&limit=5
+GET {{host}}/api/v1/books/price-range?min_price=20&max_price=30&limit=5
 Accept: {{json}}
 
 > {%
@@ -185,3 +185,76 @@ if (arr.length > 0) {
 }
 %}
 
+### Auth: login
+POST {{host}}/api/v1/auth/login
+Content-Type: application/json
+Accept: {{json}}
+
+{
+  "username": "admin",
+  "password": "admin123"
+}
+
+> {%
+// next requests tokens
+const body = JSON.parse(response.body);
+client.global.set("access_token", body.access_token);
+client.global.set("refresh_token", body.refresh_token);
+client.test("login: 200 OK", () => client.assert(response.status === 200));
+%}
+
+### Auth: refresh
+POST {{host}}/api/v1/auth/refresh
+Content-Type: application/json
+Accept: {{json}}
+
+{
+  "refresh_token": "{{refresh_token}}"
+}
+
+> {%
+const body = JSON.parse(response.body);
+client.test("refresh: 200 OK", () => client.assert(response.status === 200));
+client.assert(body.access_token, "must return access_token");
+%}
+
+### Admin: trigger scraping
+POST {{host}}/api/v1/scraping/trigger
+Authorization: Bearer {{access_token}}
+Accept: {{json}}
+
+> {%
+client.test("scraping trigger: 200 OK", () => client.assert(response.status === 200));
+%}
+
+### ML: features
+GET {{host}}/api/v1/ml/features?limit=5
+Accept: {{json}}
+
+> {%
+client.test("ml features: 200 OK", () => client.assert(response.status === 200));
+%}
+
+### ML: predictions
+POST {{host}}/api/v1/ml/predictions
+Content-Type: application/json
+Accept: {{json}}
+
+{
+  "items": [
+    { "id": 1 },
+    { "title": "Foo", "price": 50.0, "rating": 3, "category": "Test" }
+  ]
+}
+
+> {%
+client.test("ml predictions: 200 OK", () => client.assert(response.status === 200));
+%}
+
+### Metrics (Prometheus)
+GET {{host}}/metrics
+Accept: text/plain
+
+> {%
+client.test("metrics: 200 OK", () => client.assert(response.status === 200));
+%}
