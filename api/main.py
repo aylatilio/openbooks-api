@@ -8,7 +8,11 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from .repository import CSVBookRepository
+from pathlib import Path
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 
 # -----------------------------------------------------------------------------
 # OpenAPI metadata (shown on Swagger UI)
@@ -123,8 +127,12 @@ class CategoryStats(BaseModel):
 # -----------------------------------------------------------------------------
 # Dependencies
 # -----------------------------------------------------------------------------
-DATA_CSV = Path(__file__).resolve().parents[1] / "data" / "raw" / "books.csv"
-
+DATA_CSV = Path(
+    os.getenv(
+        "DATA_CSV",
+        Path(__file__).resolve().parents[1] / "data" / "raw" / "books.csv"
+    )
+)
 
 def get_repo() -> CSVBookRepository:
     """Resolve the repository (DI-friendly)."""

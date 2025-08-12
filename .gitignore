@@ -3,13 +3,15 @@
 .idea/
 
 # Python caches & tooling
+**/__pycache__/
+*.pyc
 .mypy_cache/
 .ruff_cache/
 .ipynb_checkpoints/
+.pytype/
 .coverage
 coverage.xml
 htmlcov/
-.pytype/
 __pypackages__/
 
 # Build/dist
@@ -19,3 +21,9 @@ build/
 
 # Logs
 *.log
+
+# Envs & OS
+.venv/
+.env*
+!.env.example
+.DS_Store
