@@ -3,30 +3,39 @@
 # Layers: Endpoints delegate data access to api/repository.py
 # Swagger/OpenAPI: interactive docs at /docs
 
-# stdlib
-import os
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
-# third-party
-from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query
+import logging
+import time
+import uuid
+
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
+from prometheus_fastapi_instrumentator import Instrumentator
 
-# local
 from .repository import CSVBookRepository
+from .settings import settings
+from .security import (
+    authenticate_admin,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    require_admin,
+)
 
-load_dotenv()
-
-# -----------------------------------------------------------------------------
-# OpenAPI metadata (shown on Swagger UI)
-# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------#
+# OpenAPI metadata
+# -----------------------------------------------------------------------------#
 TAGS_METADATA = [
     {"name": "health", "description": "Service health and dataset availability."},
     {"name": "books", "description": "List, retrieve and search books."},
     {"name": "categories", "description": "Available book categories."},
     {"name": "stats", "description": "Collection insights and per-category statistics."},
+    {"name": "auth", "description": "JWT authentication endpoints."},
+    {"name": "ml", "description": "ML-ready data and prediction placeholders."},
+    {"name": "admin", "description": "Protected administrative operations."},
 ]
 
 app = FastAPI(
@@ -37,16 +46,33 @@ app = FastAPI(
         "name": "MIT License",
         "url": "https://github.com/aylatilio/openbooks-api/blob/main/LICENSE",
     },
-    contact={
-        "name": "Ayla Atilio Florscuk",
-        "url": "https://github.com/aylatilio",
-    },
+    contact={"name": "Ayla Atilio Florscuk", "url": "https://github.com/aylatilio"},
     openapi_tags=TAGS_METADATA,
 )
 
-# -----------------------------------------------------------------------------
-# Models (shown in OpenAPI schemas) + examples
-# -----------------------------------------------------------------------------
+# Structured request logging
+logger = logging.getLogger("openbooks")
+logging.basicConfig(level=logging.INFO)
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    rid = uuid.uuid4().hex[:8]
+    start = time.perf_counter()
+    response = await call_next(request)
+    dur_ms = (time.perf_counter() - start) * 1000.0
+    logger.info(
+        "rid=%s method=%s path=%s status=%s duration_ms=%.2f",
+        rid, request.method, request.url.path, response.status_code, dur_ms,
+    )
+    response.headers["X-Request-ID"] = rid
+    return response
+
+# Prometheus metrics at /metrics
+Instrumentator().instrument(app).expose(app, include_in_schema=False, endpoint="/metrics")
+
+# -----------------------------------------------------------------------------#
+# Models (OpenAPI schemas)
+# -----------------------------------------------------------------------------#
 class Book(BaseModel):
     id: int
     title: str
@@ -57,57 +83,16 @@ class Book(BaseModel):
     image_url: str
     product_url: str
 
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "id": 1,
-                "title": "It's Only the Himalayas",
-                "price": 45.17,
-                "rating": 2,
-                "availability": "In stock (19 available)",
-                "category": "Travel",
-                "image_url": "https://books.toscrape.com/media/cache/6d/41/....jpg",
-                "product_url": "https://books.toscrape.com/catalogue/its-only-the-himalayas_981/index.html",
-            }
-        }
-    }
-
-
 class HealthResponse(BaseModel):
-    status: Literal["ok"] = Field(..., description="Service status")
-    csv_exists: bool = Field(..., description="Whether the CSV file exists")
-    rows: int = Field(..., ge=0, description="Row count in CSV")
-    last_updated: Optional[str] = Field(None, description="CSV mtime (ISO8601)")
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "status": "ok",
-                "csv_exists": True,
-                "rows": 1000,
-                "last_updated": "2025-08-10T22:59:25",
-            }
-        }
-    }
-
+    status: Literal["ok"]
+    csv_exists: bool
+    rows: int = Field(..., ge=0)
+    last_updated: Optional[str] = None
 
 class StatsOverviewResponse(BaseModel):
     total_books: int
     avg_price: float
-    ratings_distribution: Dict[str, int] = Field(
-        ..., description="Keys are strings '1'..'5' (star rating)."
-    )
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "total_books": 1000,
-                "avg_price": 35.42,
-                "ratings_distribution": {"1": 210, "2": 205, "3": 200, "4": 195, "5": 190},
-            }
-        }
-    }
-
+    ratings_distribution: Dict[str, int]
 
 class CategoryStats(BaseModel):
     category: str
@@ -116,31 +101,51 @@ class CategoryStats(BaseModel):
     max_price: float
     avg_price: float
 
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "category": "Travel",
-                "count": 20,
-                "min_price": 23.21,
-                "max_price": 56.88,
-                "avg_price": 39.45,
-            }
-        }
-    }
+# --- Auth models ---
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: Literal["bearer"] = "bearer"
 
-# -----------------------------------------------------------------------------
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+# --- ML models ---
+class FeatureRow(BaseModel):
+    id: int
+    title: str
+    price: float
+    rating: int
+    category: str
+
+class PredictionIn(BaseModel):
+    id: Optional[int] = None
+    title: Optional[str] = None
+    price: Optional[float] = None
+    rating: Optional[int] = None
+    category: Optional[str] = None
+
+class PredictionsRequest(BaseModel):
+    items: List[PredictionIn]
+
+class PredictionOut(BaseModel):
+    id: int
+    prediction: float
+
+# -----------------------------------------------------------------------------#
 # Dependencies
-# -----------------------------------------------------------------------------
-DATA_CSV = Path(
-    os.getenv(
-        "DATA_CSV",
-        Path(__file__).resolve().parents[1] / "data" / "raw" / "books.csv"
-    )
-)
+# -----------------------------------------------------------------------------#
+def _resolve_data_csv(path_str: str) -> Path:
+    p = Path(path_str)
+    return p if p.is_absolute() else (Path(__file__).resolve().parents[1] / p)
+
+DATA_CSV = _resolve_data_csv(settings.DATA_CSV)
 
 def get_repo() -> CSVBookRepository:
-    """Resolve the repository (DI-friendly)."""
     return CSVBookRepository(DATA_CSV)
 
 
@@ -192,21 +197,15 @@ def top_rated(
     return [Book(**row) for row in rows]
 
 
-@app.get(
-    "/api/v1/books/price-range",
-    response_model=List[Book],
-    tags=["books"],
-    summary="Books in a price range",
-)
+@app.get("/api/v1/books/price-range", response_model=List[Book], tags=["books"], summary="Books in a price range")
 def price_range(
-    min: float = Query(..., ge=0, description="Minimum price (inclusive)."),
-    max: float = Query(..., ge=0, description="Maximum price (inclusive)."),
+    min_price: float = Query(..., ge=0, description="Minimum price (inclusive)."),
+    max_price: float = Query(..., ge=0, description="Maximum price (inclusive)."),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     repo: CSVBookRepository = Depends(get_repo),
 ):
-    """Return books whose price is between [min, max], inclusive, sorted by price asc."""
-    rows = repo.price_range(min_price=min, max_price=max, limit=limit, offset=offset)
+    rows = repo.price_range(min_price=min_price, max_price=max_price, limit=limit, offset=offset)
     return [Book(**row) for row in rows]
 
 
@@ -275,6 +274,91 @@ def stats_overview(repo: CSVBookRepository = Depends(get_repo)):
 def stats_categories(repo: CSVBookRepository = Depends(get_repo)):
     """Per-category metrics (count and price stats), sorted by count desc."""
     return repo.stats_by_category()
+
+
+# -------------------- AUTH --------------------
+@app.post("/api/v1/auth/login", response_model=TokenResponse, tags=["auth"])
+def login(body: LoginRequest):
+    """Return access & refresh tokens for the admin user."""
+    if not authenticate_admin(body.username, body.password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    return TokenResponse(
+        access_token=create_access_token(body.username),
+        refresh_token=create_refresh_token(body.username),
+    )
+
+
+@app.post("/api/v1/auth/refresh", response_model=TokenResponse, tags=["auth"])
+def refresh(body: RefreshRequest):
+    """Exchange a refresh token for a new access token."""
+    claims = decode_token(body.refresh_token)
+    if claims.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Not a refresh token")
+    subject = claims.get("sub")
+    return TokenResponse(
+        access_token=create_access_token(subject),
+        refresh_token=create_refresh_token(subject),
+    )
+
+
+# -------------------- ADMIN (protected stub) --------------------
+@app.post("/api/v1/scraping/trigger", tags=["admin"])
+def trigger_scraping(admin: str = Depends(require_admin)):
+    """
+    Protected stub endpoint for future scraping orchestration.
+    Currently returns a simple 'queued' response.
+    """
+    return {"status": "queued", "by": admin}
+
+
+# -------------------- ML --------------------
+@app.get("/api/v1/ml/features", response_model=List[FeatureRow], tags=["ml"])
+def ml_features(
+    limit: int = Query(100, ge=1, le=10_000),
+    offset: int = Query(0, ge=0),
+    repo: CSVBookRepository = Depends(get_repo),
+):
+    return [FeatureRow(**row) for row in repo.features(limit=limit, offset=offset)]
+
+
+@app.get("/api/v1/ml/training-data", response_model=List[FeatureRow], tags=["ml"])
+def ml_training_data(
+    limit: int = Query(1000, ge=1, le=50_000),
+    offset: int = Query(0, ge=0),
+    repo: CSVBookRepository = Depends(get_repo),
+):
+    return [FeatureRow(**row) for row in repo.training_data(limit=limit, offset=offset)]
+
+
+@app.post("/api/v1/ml/predictions", response_model=List[PredictionOut], tags=["ml"])
+def ml_predictions(
+    body: PredictionsRequest,
+    repo: CSVBookRepository = Depends(get_repo),
+):
+    """
+    Placeholder predictor:
+    Predicts 1 if (rating >= 4) OR (price >= dataset average), else 0.
+    Deterministic and stateless — good enough for a demo.
+    """
+    avg_price = repo.avg_price()
+    out: List[PredictionOut] = []
+
+    for i, item in enumerate(body.items):
+        # Backfill from repository if only id is provided
+        if item.id is not None and (item.price is None or item.rating is None):
+            row = repo.get(item.id)
+            if row:
+                if item.price is None:
+                    item.price = float(row.get("price") or 0.0)
+                if item.rating is None:
+                    item.rating = int(row.get("rating") or 0)
+
+        price = float(item.price or 0.0)
+        rating = int(item.rating or 0)
+        pred = 1.0 if (rating >= 4 or price >= avg_price) else 0.0
+        out.append(PredictionOut(id=item.id if item.id is not None else (i + 1), prediction=pred))
+
+    return out
 
 # Redirect root to the interactive docs
 @app.get("/", include_in_schema=False)

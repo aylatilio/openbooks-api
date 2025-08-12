@@ -202,3 +202,24 @@ class CSVBookRepository:
         df = df.sort_values(["price", "id"], ascending=[True, True])
         df = df.iloc[offset : offset + limit]
         return [row.to_dict() for _, row in df.iterrows()]
+
+    def features(self, limit: int, offset: int) -> list[dict]:
+        """Return normalized columns for ML consumption."""
+        df = self._numeric_price(self._df())
+        if df.empty:
+            return []
+        out = df.loc[:, ["id", "title", "price", "rating", "category"]].copy()
+        out["category"] = out["category"].astype(str).str.strip()
+        out = out.iloc[offset: offset + limit]
+        return [row.to_dict() for _, row in out.iterrows()]
+
+    def training_data(self, limit: int, offset: int) -> list[dict]:
+        """Alias to features (kept separate for future evolution)."""
+        return self.features(limit=limit, offset=offset)
+
+    def avg_price(self) -> float:
+        """Mean price across the dataset (0.0 if empty)."""
+        df = self._numeric_price(self._df())
+        if df.empty:
+            return 0.0
+        return float(df["price"].mean(skipna=True))
