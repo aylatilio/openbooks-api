@@ -1,7 +1,7 @@
 # OpenBooks API
 # Purpose: Public REST API over the scraped books dataset
 # Layers: Endpoints delegate data access to api/repository.py
-# Swagger/OpenAPI: interactive docs at /docs
+# Docs: interactive Swagger UI at /docs
 
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
@@ -25,9 +25,7 @@ from .security import (
     require_admin,
 )
 
-# -----------------------------------------------------------------------------#
-# OpenAPI metadata
-# -----------------------------------------------------------------------------#
+# --------------------------- OpenAPI metadata --------------------------- #
 TAGS_METADATA = [
     {"name": "health", "description": "Service health and dataset availability."},
     {"name": "books", "description": "List, retrieve and search books."},
@@ -50,12 +48,13 @@ app = FastAPI(
     openapi_tags=TAGS_METADATA,
 )
 
-# Structured request logging
+# ----------------------- Structured request logging --------------------- #
 logger = logging.getLogger("openbooks")
 logging.basicConfig(level=logging.INFO)
 
 @app.middleware("http")
 async def log_requests(request, call_next):
+    """Lightweight structured log per request + X-Request-ID header."""
     rid = uuid.uuid4().hex[:8]
     start = time.perf_counter()
     response = await call_next(request)
@@ -67,12 +66,11 @@ async def log_requests(request, call_next):
     response.headers["X-Request-ID"] = rid
     return response
 
-# Prometheus metrics at /metrics
+# ---------------------- Prometheus metrics endpoint --------------------- #
+# Exposes /metrics (not in OpenAPI schema)
 Instrumentator().instrument(app).expose(app, include_in_schema=False, endpoint="/metrics")
 
-# -----------------------------------------------------------------------------#
-# Models (OpenAPI schemas)
-# -----------------------------------------------------------------------------#
+# --------------------------- OpenAPI schemas ---------------------------- #
 class Book(BaseModel):
     id: int
     title: str
@@ -136,22 +134,19 @@ class PredictionOut(BaseModel):
     id: int
     prediction: float
 
-# -----------------------------------------------------------------------------#
-# Dependencies
-# -----------------------------------------------------------------------------#
+# ------------------------------ DI / repo ------------------------------- #
 def _resolve_data_csv(path_str: str) -> Path:
+    """Resolve DATA_CSV as absolute path relative to project root if needed."""
     p = Path(path_str)
     return p if p.is_absolute() else (Path(__file__).resolve().parents[1] / p)
 
 DATA_CSV = _resolve_data_csv(settings.DATA_CSV)
 
 def get_repo() -> CSVBookRepository:
+    """Dependency provider for the repository."""
     return CSVBookRepository(DATA_CSV)
 
-
-# -----------------------------------------------------------------------------
-# Endpoints
-# -----------------------------------------------------------------------------
+# -------------------------------- Routes -------------------------------- #
 @app.get(
     "/api/v1/health",
     response_model=HealthResponse,
@@ -161,9 +156,8 @@ def get_repo() -> CSVBookRepository:
     response_model_exclude_none=True,
 )
 def health(repo: CSVBookRepository = Depends(get_repo)):
-    """Returns whether the dataset is present and basic metadata about it."""
+    """Basic readiness + dataset visibility."""
     return repo.health()
-
 
 @app.get(
     "/api/v1/books",
@@ -177,10 +171,9 @@ def list_books(
     offset: int = Query(0, ge=0, description="Number of items to skip."),
     repo: CSVBookRepository = Depends(get_repo),
 ):
-    """'id' is a 1-based sequential identifier derived from the CSV row order."""
+    """1-based 'id' is derived from CSV row order."""
     rows = repo.list(limit=limit, offset=offset)
     return [Book(**row) for row in rows]
-
 
 @app.get(
     "/api/v1/books/top-rated",
@@ -192,10 +185,9 @@ def top_rated(
     limit: int = Query(10, ge=1, le=100, description="How many items to return."),
     repo: CSVBookRepository = Depends(get_repo),
 ):
-    """Return the top-N books by rating (desc)."""
+    """Top-N by rating (desc)."""
     rows = repo.top_rated(limit=limit)
     return [Book(**row) for row in rows]
-
 
 @app.get("/api/v1/books/price-range", response_model=List[Book], tags=["books"], summary="Books in a price range")
 def price_range(
@@ -205,9 +197,9 @@ def price_range(
     offset: int = Query(0, ge=0),
     repo: CSVBookRepository = Depends(get_repo),
 ):
+    """Items priced within [min_price, max_price] (inclusive)."""
     rows = repo.price_range(min_price=min_price, max_price=max_price, limit=limit, offset=offset)
     return [Book(**row) for row in rows]
-
 
 @app.get(
     "/api/v1/books/search",
@@ -222,10 +214,9 @@ def search_books(
     offset: int = Query(0, ge=0),
     repo: CSVBookRepository = Depends(get_repo),
 ):
-    """Search by optional title and/or category with pagination."""
+    """Search by optional title/category with pagination."""
     rows = repo.search(title=title, category=category, limit=limit, offset=offset)
     return [Book(**row) for row in rows]
-
 
 @app.get(
     "/api/v1/books/{book_id}",
@@ -235,12 +226,11 @@ def search_books(
     responses={404: {"description": "Book not found"}},
 )
 def get_book(book_id: int, repo: CSVBookRepository = Depends(get_repo)):
-    """Retrieve a single book by ID (1-based)."""
+    """1-based ID access."""
     row = repo.get(book_id)
     if not row:
         raise HTTPException(status_code=404, detail="Book not found")
     return Book(**row)
-
 
 @app.get(
     "/api/v1/categories",
@@ -252,7 +242,6 @@ def list_categories(repo: CSVBookRepository = Depends(get_repo)):
     """Unique categories sorted alphabetically."""
     return repo.categories()
 
-
 @app.get(
     "/api/v1/stats/overview",
     response_model=StatsOverviewResponse,
@@ -261,9 +250,8 @@ def list_categories(repo: CSVBookRepository = Depends(get_repo)):
     response_model_exclude_none=True,
 )
 def stats_overview(repo: CSVBookRepository = Depends(get_repo)):
-    """Collection-level metrics (count, price average, rating distribution)."""
+    """Count, average price and rating distribution."""
     return repo.stats_overview()
-
 
 @app.get(
     "/api/v1/stats/categories",
@@ -272,11 +260,10 @@ def stats_overview(repo: CSVBookRepository = Depends(get_repo)):
     summary="Stats per category",
 )
 def stats_categories(repo: CSVBookRepository = Depends(get_repo)):
-    """Per-category metrics (count and price stats), sorted by count desc."""
+    """Per-category count + price stats."""
     return repo.stats_by_category()
 
-
-# -------------------- AUTH --------------------
+# ------------------------------ AUTH ------------------------------ #
 @app.post("/api/v1/auth/login", response_model=TokenResponse, tags=["auth"])
 def login(body: LoginRequest):
     """Return access & refresh tokens for the admin user."""
@@ -286,7 +273,6 @@ def login(body: LoginRequest):
         access_token=create_access_token(body.username),
         refresh_token=create_refresh_token(body.username),
     )
-
 
 @app.post("/api/v1/auth/refresh", response_model=TokenResponse, tags=["auth"])
 def refresh(body: RefreshRequest):
@@ -300,26 +286,21 @@ def refresh(body: RefreshRequest):
         refresh_token=create_refresh_token(subject),
     )
 
-
-# -------------------- ADMIN (protected stub) --------------------
+# --------------------------- ADMIN (protected) --------------------------- #
 @app.post("/api/v1/scraping/trigger", tags=["admin"])
 def trigger_scraping(admin: str = Depends(require_admin)):
-    """
-    Protected stub endpoint for future scraping orchestration.
-    Currently returns a simple 'queued' response.
-    """
+    """Protected stub for future scraping orchestration."""
     return {"status": "queued", "by": admin}
 
-
-# -------------------- ML --------------------
+# --------------------------------- ML ----------------------------------- #
 @app.get("/api/v1/ml/features", response_model=List[FeatureRow], tags=["ml"])
 def ml_features(
     limit: int = Query(100, ge=1, le=10_000),
     offset: int = Query(0, ge=0),
     repo: CSVBookRepository = Depends(get_repo),
 ):
+    """Normalized columns ready for notebooks."""
     return [FeatureRow(**row) for row in repo.features(limit=limit, offset=offset)]
-
 
 @app.get("/api/v1/ml/training-data", response_model=List[FeatureRow], tags=["ml"])
 def ml_training_data(
@@ -327,8 +308,8 @@ def ml_training_data(
     offset: int = Query(0, ge=0),
     repo: CSVBookRepository = Depends(get_repo),
 ):
+    """Large page size intended for offline downloads/training."""
     return [FeatureRow(**row) for row in repo.training_data(limit=limit, offset=offset)]
-
 
 @app.post("/api/v1/ml/predictions", response_model=List[PredictionOut], tags=["ml"])
 def ml_predictions(
@@ -336,15 +317,14 @@ def ml_predictions(
     repo: CSVBookRepository = Depends(get_repo),
 ):
     """
-    Placeholder predictor:
-    Predicts 1 if (rating >= 4) OR (price >= dataset average), else 0.
-    Deterministic and stateless — good enough for a demo.
+    Placeholder: predicts 1 if (rating >= 4) OR (price >= dataset average), else 0.
+    Deterministic and stateless — demo only.
     """
     avg_price = repo.avg_price()
     out: List[PredictionOut] = []
 
     for i, item in enumerate(body.items):
-        # Backfill from repository if only id is provided
+        # Backfill from repo if only id was provided
         if item.id is not None and (item.price is None or item.rating is None):
             row = repo.get(item.id)
             if row:
@@ -360,7 +340,8 @@ def ml_predictions(
 
     return out
 
-# Redirect root to the interactive docs
+# ------------------------------- Root redirect -------------------------- #
 @app.get("/", include_in_schema=False)
 def root():
+    """Redirect to Swagger UI."""
     return RedirectResponse(url="/docs")
