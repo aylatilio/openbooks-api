@@ -29,3 +29,6 @@ build/
 !.env.example
 .DS_Store
 
+# Streamlit
+.streamlit/
+

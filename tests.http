@@ -178,17 +178,30 @@ Accept: {{json}}
 client.test("price-range: 200 OK", () => client.assert(response.status === 200));
 const arr = JSON.parse(response.body);
 client.test("price-range: array", () => client.assert(Array.isArray(arr)));
+
 if (arr.length > 0) {
   client.test("price-range: all within [20,30]", () =>
     client.assert(arr.every(b => b.price >= 20 && b.price <= 30))
   );
 }
+
+if (arr.length > 1) {
+  // checa ordenação ascendente robusta (par a par)
+  client.test("price-range: ascending by price", () => {
+    for (let i = 1; i < arr.length; i++) {
+      client.assert(
+        arr[i-1].price <= arr[i].price,
+        `not sorted: ${arr[i-1].price} > ${arr[i].price} at index ${i}`
+      );
+    }
+  });
+}
 %}
 
-### Auth: login
+### AUTH — login (admin/admin123)
 POST {{host}}/api/v1/auth/login
-Content-Type: application/json
 Accept: {{json}}
+Content-Type: {{json}}
 
 {
   "username": "admin",
@@ -196,59 +209,74 @@ Accept: {{json}}
 }
 
 > {%
-// next requests tokens
-const body = JSON.parse(response.body);
-client.global.set("access_token", body.access_token);
-client.global.set("refresh_token", body.refresh_token);
 client.test("login: 200 OK", () => client.assert(response.status === 200));
+const tok = JSON.parse(response.body);
+client.global.set("access_token", tok.access_token);
+client.global.set("refresh_token", tok.refresh_token);
+client.test("login: has access & refresh", () => {
+  client.assert(!!tok.access_token);
+  client.assert(!!tok.refresh_token);
+});
 %}
 
-### Auth: refresh
-POST {{host}}/api/v1/auth/refresh
-Content-Type: application/json
+### ADMIN — protected stub (requires Bearer)
+POST {{host}}/api/v1/scraping/trigger
 Accept: {{json}}
+Authorization: Bearer {{access_token}}
+
+> {%
+client.test("admin trigger: 200 OK", () => client.assert(response.status === 200));
+%}
+
+### AUTH — refresh
+POST {{host}}/api/v1/auth/refresh
+Accept: {{json}}
+Content-Type: {{json}}
 
 {
   "refresh_token": "{{refresh_token}}"
 }
 
 > {%
-const body = JSON.parse(response.body);
 client.test("refresh: 200 OK", () => client.assert(response.status === 200));
-client.assert(body.access_token, "must return access_token");
+const tok = JSON.parse(response.body);
+client.global.set("access_token", tok.access_token);
+client.test("refresh: new access token set", () => client.assert(!!tok.access_token));
 %}
 
-### Admin: trigger scraping
-POST {{host}}/api/v1/scraping/trigger
-Authorization: Bearer {{access_token}}
+### ML — features
+GET {{host}}/api/v1/ml/features?limit=5&offset=0
 Accept: {{json}}
 
 > {%
-client.test("scraping trigger: 200 OK", () => client.assert(response.status === 200));
+client.test("ml/features: 200 OK", () => client.assert(response.status === 200));
 %}
 
-### ML: features
-GET {{host}}/api/v1/ml/features?limit=5
+### ML — training-data
+GET {{host}}/api/v1/ml/training-data?limit=10&offset=0
 Accept: {{json}}
 
 > {%
-client.test("ml features: 200 OK", () => client.assert(response.status === 200));
+client.test("ml/training-data: 200 OK", () => client.assert(response.status === 200));
 %}
 
-### ML: predictions
+### ML — predictions (by id + explicit features)
 POST {{host}}/api/v1/ml/predictions
-Content-Type: application/json
 Accept: {{json}}
+Content-Type: {{json}}
 
 {
   "items": [
-    { "id": 1 },
-    { "title": "Foo", "price": 50.0, "rating": 3, "category": "Test" }
+    {"id": 1},
+    {"title": "Some Book", "price": 60.0, "rating": 5, "category": "Default"},
+    {"title": "Cheap 2-star", "price": 5.0, "rating": 2, "category": "Default"}
   ]
 }
 
 > {%
-client.test("ml predictions: 200 OK", () => client.assert(response.status === 200));
+client.test("ml/predictions: 200 OK", () => client.assert(response.status === 200));
+const arr = JSON.parse(response.body);
+client.test("ml/predictions: array", () => client.assert(Array.isArray(arr)));
 %}
 
 ### Metrics (Prometheus)
