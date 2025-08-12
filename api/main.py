@@ -13,6 +13,7 @@ import uuid
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
+from pydantic import ConfigDict
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from .repository import CSVBookRepository
@@ -101,8 +102,12 @@ class CategoryStats(BaseModel):
 
 # --- Auth models ---
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(description="Admin username")
+    password: str = Field(description="Admin password (plain)")
+    # Pydantic v2
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"username": "admin", "password": "admin123"}
+    })
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -111,6 +116,9 @@ class TokenResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}
+    })
 
 # --- ML models ---
 class FeatureRow(BaseModel):
@@ -129,6 +137,15 @@ class PredictionIn(BaseModel):
 
 class PredictionsRequest(BaseModel):
     items: List[PredictionIn]
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "items": [
+                {"id": 1},
+                {"title": "Some Book", "price": 60.0, "rating": 5, "category": "Default"},
+                {"title": "Cheap 2-star", "price": 5.0, "rating": 2, "category": "Default"}
+            ]
+        }
+    })
 
 class PredictionOut(BaseModel):
     id: int
@@ -191,10 +208,10 @@ def top_rated(
 
 @app.get("/api/v1/books/price-range", response_model=List[Book], tags=["books"], summary="Books in a price range")
 def price_range(
-    min_price: float = Query(..., ge=0, description="Minimum price (inclusive)."),
-    max_price: float = Query(..., ge=0, description="Maximum price (inclusive)."),
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    min_price: float = Query(..., ge=0, description="Minimum price (inclusive).", example=20),
+    max_price: float = Query(..., ge=0, description="Maximum price (inclusive).", example=30),
+    limit: int = Query(100, ge=1, le=1000, example=5),
+    offset: int = Query(0, ge=0, example=0),
     repo: CSVBookRepository = Depends(get_repo),
 ):
     """Items priced within [min_price, max_price] (inclusive)."""
@@ -208,10 +225,10 @@ def price_range(
     summary="Search by title/category",
 )
 def search_books(
-    title: Optional[str] = Query(None, description="Case-insensitive substring on title."),
-    category: Optional[str] = Query(None, description="Case-insensitive substring on category."),
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    title: Optional[str] = Query(None, description="Case-insensitive substring on title.", example="moon"),
+    category: Optional[str] = Query(None, description="Case-insensitive substring on category.", example="Travel"),
+    limit: int = Query(100, ge=1, le=1000, example=5),
+    offset: int = Query(0, ge=0, example=0),
     repo: CSVBookRepository = Depends(get_repo),
 ):
     """Search by optional title/category with pagination."""
@@ -295,8 +312,8 @@ def trigger_scraping(admin: str = Depends(require_admin)):
 # --------------------------------- ML ----------------------------------- #
 @app.get("/api/v1/ml/features", response_model=List[FeatureRow], tags=["ml"])
 def ml_features(
-    limit: int = Query(100, ge=1, le=10_000),
-    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=10_000, example=5),
+    offset: int = Query(0, ge=0, example=0),
     repo: CSVBookRepository = Depends(get_repo),
 ):
     """Normalized columns ready for notebooks."""
@@ -304,8 +321,8 @@ def ml_features(
 
 @app.get("/api/v1/ml/training-data", response_model=List[FeatureRow], tags=["ml"])
 def ml_training_data(
-    limit: int = Query(1000, ge=1, le=50_000),
-    offset: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=50_000, example=10),
+    offset: int = Query(0, ge=0, example=0),
     repo: CSVBookRepository = Depends(get_repo),
 ):
     """Large page size intended for offline downloads/training."""
